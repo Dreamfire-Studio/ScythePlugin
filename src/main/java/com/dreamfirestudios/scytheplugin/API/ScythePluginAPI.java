@@ -7,8 +7,8 @@
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to do so, subject to the following
- * conditions:
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
  *
  * The above copyright notice and this permission notice shall be included in all
  * copies or substantial portions of the Software.
@@ -23,114 +23,60 @@
  */
 package com.dreamfirestudios.scytheplugin.API;
 
+import com.dreamfirestudios.scytheplugin.ScythePlugin;
+import com.dreamfirestudios.scytheplugin.Events.ConfigReloadEvent;
+import com.dreamfirestudios.scytheplugin.Events.ConfigResetEvent;
+import com.dreamfirestudios.scytheplugin.StaticPulseConfig.SerializableItemsConfig;
 import com.dreamfirestudios.dreamconfig.DreamConfig;
 import com.dreamfirestudios.dreamcore.DreamChat.DreamMessageSettings;
-import com.dreamfirestudios.scytheplugin.Core.Services;
-import com.dreamfirestudios.scytheplugin.Core.Try;
-import com.dreamfirestudios.scytheplugin.Event.ScythePluginConfigReloadEvent;
-import com.dreamfirestudios.scytheplugin.Event.ScythePluginConfigResetEvent;
-import com.dreamfirestudios.scytheplugin.ScythePlugin;
-import com.dreamfirestudios.scytheplugin.PulseConfig.ScythePluginConfig;
-import com.dreamfirestudios.scytheplugin.PulseConfig.ScythePluginSerializableItems;
 import org.bukkit.inventory.ItemStack;
 
-import java.time.Duration;
 import java.util.Objects;
 import java.util.function.Consumer;
 
 /**
- * Public, static API surface for <em>ScythePlugin</em> features.
- * <p>Enables/disables the system, serializes items into config, and resets/reloads
- * configs with proper main-thread dispatch and plugin events.</p>
+ * Public-facing API for ScythePlugin.
+ *
+ * <p>Provides helpers to reload/reset configs and serialize items into the
+ * {@link SerializableItemsConfig} store.</p>
  */
 public final class ScythePluginAPI {
 
-    private ScythePluginAPI() { }
+    private ScythePluginAPI() {
 
-    /**
-     * Set the system enabled flag and persist the config; success callback runs on main thread.
-     *
-     * @param onSuccess callback invoked with the updated config after save (non-null)
-     * @param state     desired enabled state
-     */
-    public static void ScythePluginEnableSystem(final Consumer<ScythePluginConfig> onSuccess, final boolean state) {
-        Objects.requireNonNull(onSuccess, "onSuccess");
-        ScythePluginConfig.ReturnStaticAsync(ScythePlugin.GetScythePlugin(), ScythePluginConfig.class, config -> {
-                    config.systemEnabled = state;
-                    config.SaveDreamConfig(ScythePlugin.GetScythePlugin(), ignored -> Services.scheduler().main(() -> onSuccess.accept(config)));
-                }
-        );
     }
 
     /**
-     * Toggle the system enabled flag and persist the config; success callback runs on main thread.
+     * Reloads or resets all plugin configs.
      *
-     * @param onSuccess callback invoked with the updated config after save (non-null)
+     * <p>Fires either {@link ConfigReloadEvent} or {@link ConfigResetEvent} first.
+     * If the event is cancelled, no reload/reset occurs.</p>
+     *
+     * @param settings     message formatting settings (not null)
+     * @param resetConfigs whether to reset configs instead of reloading them
      */
-    public static void ScythePluginEnableSystem(final Consumer<ScythePluginConfig> onSuccess) {
-        Objects.requireNonNull(onSuccess, "onSuccess");
-        ScythePluginConfig.ReturnStaticAsync(ScythePlugin.GetScythePlugin(), ScythePluginConfig.class, config -> {
-            config.systemEnabled = !config.systemEnabled;
-            config.SaveDreamConfig(ScythePlugin.GetScythePlugin(), ignored -> Services.scheduler().main(() -> onSuccess.accept(config)));
-        });
+    public static void ReloadConfigs(final DreamMessageSettings settings, final boolean resetConfigs) {
+        Objects.requireNonNull(settings, "settings");
+        var event = resetConfigs ? new ConfigResetEvent() : new ConfigReloadEvent();
+        event.callEvent();
+        if (event.isCancelled()) {
+            return;
+        }
+        DreamConfig.GetDreamConfig().RegisterStatic(ScythePlugin.GetInstance(), resetConfigs, settings);
     }
 
     /**
-     * Serialize and store an {@link ItemStack} under an ID, then persist and callback on main thread.
+     * Serializes an {@link ItemStack} into the {@link SerializableItemsConfig}
+     * under the given ID.
      *
-     * @param onSuccess callback invoked with the serializable-items config after save (non-null)
-     * @param id        key to store the item under (non-null)
-     * @param itemStack item to store (non-null)
+     * @param itemName the unique identifier for the item (not null or empty)
+     * @param itemStack the item to serialize (not null)
+     * @param response callback once the config is updated (not null)
      */
-    public static void ScythePluginSerializeItem(final Consumer<ScythePluginSerializableItems> onSuccess, final String id, final ItemStack itemStack) {
-        Objects.requireNonNull(onSuccess, "onSuccess");
-        Objects.requireNonNull(id, "id");
+    public static void SerialiseItem(final String itemName, final ItemStack itemStack, final Consumer<SerializableItemsConfig> response) {
+        Objects.requireNonNull(itemName, "itemName");
         Objects.requireNonNull(itemStack, "itemStack");
-        ScythePluginSerializableItems.ReturnStaticAsync(
-                ScythePlugin.GetScythePlugin(),
-                ScythePluginSerializableItems.class,
-                cfg -> {
-                    cfg.AddItemStack(id, itemStack);
-                    cfg.SaveDreamConfig(ScythePlugin.GetScythePlugin(), ignored -> Services.scheduler().main(() -> onSuccess.accept(cfg)));
-                }
-        );
-    }
-
-    /**
-     * Reset configs (fresh registration) and fire {@link ScythePluginConfigResetEvent}, no-op if disabled.
-     *
-     * @param settings message formatting/settings to pass through registration
-     */
-    public static void ScythePluginResetConfigs(final DreamMessageSettings settings) {
-        Objects.requireNonNull(settings, "settings");
-        ScythePluginConfig.ReturnStaticAsync(ScythePlugin.GetScythePlugin(), ScythePluginConfig.class, config -> {
-            if (!config.systemEnabled) return;
-
-            Services.scheduler().main(() -> {
-                Try.runWithRetry("RegisterStatic(reset)", 3, Duration.ofMillis(50), () ->
-                        DreamConfig.GetDreamConfig().RegisterStatic(ScythePlugin.GetScythePlugin(), true, settings));
-
-                new ScythePluginConfigResetEvent().callEvent();
-            });
-        });
-    }
-
-    /**
-     * Reload configs (non-destructive) and fire {@link ScythePluginConfigReloadEvent}, no-op if disabled.
-     *
-     * @param settings message formatting/settings to pass through registration
-     */
-    public static void ScythePluginReloadConfigs(final DreamMessageSettings settings) {
-        Objects.requireNonNull(settings, "settings");
-        ScythePluginConfig.ReturnStaticAsync(ScythePlugin.GetScythePlugin(), ScythePluginConfig.class, cfg -> {
-            if (!cfg.systemEnabled) return;
-
-            Services.scheduler().main(() -> {
-                Try.runWithRetry("RegisterStatic(reload)", 3, Duration.ofMillis(50), () ->
-                        DreamConfig.GetDreamConfig().RegisterStatic(ScythePlugin.GetScythePlugin(), false, settings));
-
-                new ScythePluginConfigReloadEvent().callEvent();
-            });
-        });
+        Objects.requireNonNull(response, "response");
+        SerializableItemsConfig.AddItemStack(itemName, itemStack, response);
     }
 }

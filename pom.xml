@@ -13,7 +13,7 @@
         <github.owner>Dreamfire-Studio</github.owner>
         <github.server.id>github</github.server.id>
         <github.repo>${project.name}</github.repo>
-        <maven.compiler.release>22</maven.compiler.release>
+        <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.showWarnings>true</maven.compiler.showWarnings>
         <maven.compiler.showDeprecation>true</maven.compiler.showDeprecation>
@@ -64,8 +64,6 @@
                             <version>1.18.36</version>
                         </path>
                     </annotationProcessorPaths>
-                    <source>22</source>
-                    <target>22</target>
                 </configuration>
             </plugin>
         </plugins>
